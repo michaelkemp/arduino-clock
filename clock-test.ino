@@ -140,8 +140,8 @@ void setup() {
         time_t CompSecs = makeTime( CompTime );
         time_t RTCSecs = makeTime( RTCTime );
 
-        // Set Time Compile time is ahead of RTC
-        if ( CompSecs > (RTCSecs - 30)) {
+        // Set RTC IF Compile time is ahead of RTC
+        if ( CompSecs > RTCSecs ) {
           RTC.write(CompTime);
           rtc.adjust(rtc.now() + TimeSpan(5)); // time seems about 5 seconds slow -- adjust this here
         }        
