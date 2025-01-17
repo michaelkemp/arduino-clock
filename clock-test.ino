@@ -19,7 +19,7 @@ int buttonState = 1024;
 int lightState = 1024;
 
 RTC_DS1307 rtc;
-tmElements_t PCTime, RTCTime;
+tmElements_t CompTime, RTCTime;
 
 static int digitPins[] = { 3, 9, 10, 11, 5, 6 };
 static int segmentPins[] = { 12, 8, 7, 4, 2, 1, 0 };
@@ -38,9 +38,9 @@ bool getTime(const char *str) {
       return false;
     }
 
-    PCTime.Hour = Hour;
-    PCTime.Minute = Min;
-    PCTime.Second = Sec;
+    CompTime.Hour = Hour;
+    CompTime.Minute = Min;
+    CompTime.Second = Sec;
     return true;
 }
 
@@ -63,9 +63,9 @@ bool getDate(const char *str) {
       return false;
     }
 
-    PCTime.Day = Day;
-    PCTime.Month = monthIndex;
-    PCTime.Year = CalendarYrToTm(Year);
+    CompTime.Day = Day;
+    CompTime.Month = monthIndex;
+    CompTime.Year = CalendarYrToTm(Year);
     return true;
 }
 
@@ -127,7 +127,7 @@ void setup() {
 
   rtc.begin();
 
-  //get time from PC if plugged in to Arduino
+  //get time from Code Compile Time 
   if (getDate(__DATE__) && getTime(__TIME__)) {
         DateTime now = rtc.now();
         RTCTime.Hour = now.hour(); 
@@ -137,11 +137,12 @@ void setup() {
         RTCTime.Month = now.month(); 
         RTCTime.Year = now.year() - 1970;
 
-        time_t PCSecs = makeTime( PCTime );
+        time_t CompSecs = makeTime( CompTime );
         time_t RTCSecs = makeTime( RTCTime );
 
-        if ( abs(PCSecs - RTCSecs) > 0) {
-          RTC.write(PCTime);
+        // Set Time Compile time is ahead of RTC
+        if ( CompSecs > (RTCSecs - 30)) {
+          RTC.write(CompTime);
           rtc.adjust(rtc.now() + TimeSpan(5)); // time seems about 5 seconds slow -- adjust this here
         }        
     }
