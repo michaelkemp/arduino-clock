@@ -11,15 +11,25 @@
 #define COLON_PIN A0
 #define ALARM_PIN A1
 
+bool isDimmer = false;
 int MAX_BRIGHTNESS_VALUE = 400;
 int MIN_BRIGHTNESS_VALUE = 20;
 int SET_BRIGHTNESS_VALUE = MAX_BRIGHTNESS_VALUE;
 
+bool ARM_BUTTONS = true;
+bool ZZZ, SET, NEG, POS, PRESSED;
+int BUTTON_ZZZ = 330;
+int BUTTON_SET = 510;
+int BUTTON_NEG = 710;
+int BUTTON_POS = 850;
+int BUTTON_OFF = 1024;
+
 int buttonState = 1024;
 int lightState = 1024;
+bool playAudio = false;
 
 RTC_DS1307 rtc;
-tmElements_t CompTime, RTCTime;
+tmElements_t tm;
 
 static int digitPins[] = { 3, 9, 10, 11, 5, 6 };
 static int segmentPins[] = { 12, 8, 7, 4, 2, 1, 0 };
@@ -31,44 +41,18 @@ byte chars[] = { 63, 6, 91, 79, 102, 109, 125, 7, 127, 111, 119, 124, 57, 94, 12
 byte displayText[8];
 int digitNo;
 
-bool getTime(const char *str) {
-    int Hour, Min, Sec;
-    
-    if (sscanf(str, "%d:%d:%d", &Hour, &Min, &Sec) != 3) {
-      return false;
-    }
-
-    CompTime.Hour = Hour;
-    CompTime.Minute = Min;
-    CompTime.Second = Sec;
-    return true;
+void setDimmer() {
+  isDimmer = !isDimmer;
+  if (isDimmer) {
+    MAX_BRIGHTNESS_VALUE = 250;
+    MIN_BRIGHTNESS_VALUE = 4;
+    SET_BRIGHTNESS_VALUE = MAX_BRIGHTNESS_VALUE;
+  } else {
+    MAX_BRIGHTNESS_VALUE = 400;
+    MIN_BRIGHTNESS_VALUE = 20;
+    SET_BRIGHTNESS_VALUE = MAX_BRIGHTNESS_VALUE;
+  }
 }
-
-bool getDate(const char *str) {
-    char Month[12];
-    int Day, Year;
-    uint8_t monthIndex = -1;
-    
-    if (sscanf(str, "%s %d %d", Month, &Day, &Year) != 3) {
-      return false;
-    }
-
-    for (int i = 0; i < 12; i++) {
-      if (strcmp(Month, monthName[i]) == 0) {
-        monthIndex = i+1;
-      }
-    }
-
-    if (monthIndex < 0) {
-      return false;
-    }
-
-    CompTime.Day = Day;
-    CompTime.Month = monthIndex;
-    CompTime.Year = CalendarYrToTm(Year);
-    return true;
-}
-
 
 void Display() {
   digitNo = (digitNo + 1) % 6;
@@ -126,47 +110,80 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT);
 
   rtc.begin();
-
-  //get time from Code Compile Time 
-  if (getDate(__DATE__) && getTime(__TIME__)) {
-        DateTime now = rtc.now();
-        RTCTime.Hour = now.hour(); 
-        RTCTime.Minute = now.minute(); 
-        RTCTime.Second = now.second(); 
-        RTCTime.Day = now.day();
-        RTCTime.Month = now.month(); 
-        RTCTime.Year = now.year() - 1970;
-
-        time_t CompSecs = makeTime( CompTime );
-        time_t RTCSecs = makeTime( RTCTime );
-
-        // Set RTC IF Compile time is ahead of RTC
-        if ( CompSecs > RTCSecs ) {
-          RTC.write(CompTime);
-          rtc.adjust(rtc.now() + TimeSpan(5)); // time seems about 5 seconds slow -- adjust this here
-        }        
-    }
+  if (!rtc.isrunning()) {
+    tm.Hour = 12;
+    tm.Minute = 0;
+    tm.Second = 0;
+    tm.Day = 1;
+    tm.Month = 1;
+    tm.Year = CalendarYrToTm(1970);
+    // Initialize RTC
+    RTC.write(tm);
+  }
 
 }
 
+int settingTime = 0;
+int hr, mn, sc;
 void loop() {
 
+  digitalWrite(ALARM_PIN, LOW);
   buttonState = analogRead(BUTTON_PIN);
+
+  if ( (abs(buttonState - BUTTON_OFF) < 50) ) {
+    ARM_BUTTONS = true;
+  } else { 
+
+    if (ARM_BUTTONS && (abs(buttonState - BUTTON_SET) < 50)) {
+      ARM_BUTTONS = false;
+      settingTime = (settingTime + 1) % 4;
+      if (settingTime == 0) {
+        rtc.adjust(DateTime(1970, 1, 1, hr, mn, sc));
+      }
+    }
+
+    if (ARM_BUTTONS && (abs(buttonState - BUTTON_NEG) < 50)) {
+      ARM_BUTTONS = false;
+      switch (settingTime) {
+        case 1: hr = (24+hr-1) % 24; break;
+        case 2: mn = (60+mn-1) % 60; break;
+        case 3: sc = (60+sc-1) % 60; break;
+      }
+    }
+
+    if (ARM_BUTTONS && (abs(buttonState - BUTTON_POS) < 50)) {
+      ARM_BUTTONS = false;
+      switch (settingTime) {
+        case 1: hr = (hr+1) % 24; break;
+        case 2: mn = (mn+1) % 60; break;
+        case 3: sc = (sc+1) % 60; break;
+      }
+    }
+
+    if (ARM_BUTTONS && (abs(buttonState - BUTTON_ZZZ) < 50)) {
+      ARM_BUTTONS = false;
+      setDimmer();
+    }
+  } 
 
   // lightState is around 250 in the light and around 750 in the dark
   lightState = constrain( analogRead(LIGHTSENSOR_PIN), 250, 750 );
-
   SET_BRIGHTNESS_VALUE = map(lightState, 250, 750, MAX_BRIGHTNESS_VALUE, MIN_BRIGHTNESS_VALUE); 
 
-  DateTime now = rtc.now();
-  int hour = now.hour();
-  int minute = now.minute();
-  int second = now.second();
+  if (settingTime == 0) { 
+    DateTime now = rtc.now();
+    hr = now.hour();
+    mn = now.minute();
+    sc = now.second();
+    digitalWrite(ALARM_PIN, LOW);
+  } else {
+    digitalWrite(ALARM_PIN, HIGH);
+  }
 
-  UpdateDisplayNumber(0, hour / 10);
-  UpdateDisplayNumber(1, hour % 10);
-  UpdateDisplayNumber(2, minute / 10);
-  UpdateDisplayNumber(3, minute % 10);
-  UpdateDisplayNumber(4, second / 10);
-  UpdateDisplayNumber(5, second % 10);
+  UpdateDisplayNumber(0, hr / 10);
+  UpdateDisplayNumber(1, hr % 10);
+  UpdateDisplayNumber(2, mn / 10);
+  UpdateDisplayNumber(3, mn % 10);
+  UpdateDisplayNumber(4, sc / 10);
+  UpdateDisplayNumber(5, sc % 10);
 }
